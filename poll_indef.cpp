@@ -52,8 +52,6 @@ int main() {
             break;
         }
 
-        std::cout << "Cekam..." << std::endl;
-
         for (const auto& pfd : poll_fds) {
             if (pfd.revents & POLLIN) {
                 char buffer[1]; // Čitamo jedan znak
