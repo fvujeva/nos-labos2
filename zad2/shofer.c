@@ -260,10 +260,11 @@ static int shofer_open_write(struct inode *inode, struct file *filp)
     shofer = container_of(inode->i_cdev, struct shofer_dev, cdev);
     filp->private_data = shofer;
 
-    if ((filp->f_flags & O_ACCMODE) != O_WRONLY)
+    if ((filp->f_flags & O_ACCMODE) != O_WRONLY) {
         return -EPERM;
+    }
 
-	return 0;
+    return 0;
 }
 
 /* output_dev only */
@@ -325,13 +326,13 @@ static ssize_t shofer_write(struct file *filp, const char __user *ubuf,
 static long control_ioctl (struct file *filp, unsigned int request, unsigned long arg)
 {
 	ssize_t retval = 0;
-	/*struct shofer_dev *shofer = filp->private_data;
+	struct shofer_dev *shofer = filp->private_data;
 	struct buffer *in_buff = shofer->in_buff;
 	struct buffer *out_buff = shofer->out_buff;
 	struct kfifo *fifo_in = &in_buff->fifo;
 	struct kfifo *fifo_out = &out_buff->fifo;
 	char c;
-	int got;*/
+	int got;
 	struct shofer_ioctl cmd;
 
 	if (_IOC_TYPE(request) != SHOFER_IOCTL_TYPE || _IOC_NR(request) != SHOFER_IOCTL_NR) {
@@ -367,11 +368,11 @@ static long control_ioctl (struct file *filp, unsigned int request, unsigned lon
         unsigned int to_copy = min_t(unsigned int, cmd.count, BUFFER_SIZE);
         to_copy = min(to_copy, kfifo_len(fifo_in));
 
-        retval = kfifo_out(fifo_in, buffer, to_copy);
+        retval = kfifo_out(fifo_in, in_buff, to_copy);
         if (retval <= 0)
             break;
 
-        retval = kfifo_in(fifo_out, buffer, retval);
+        retval = kfifo_in(fifo_out, out_buff, retval);
         if (retval <= 0)
             break;
 
