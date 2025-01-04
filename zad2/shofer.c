@@ -323,56 +323,56 @@ static ssize_t shofer_write(struct file *filp, const char __user *ubuf,
     return retval;
 }
 
-static long control_ioctl (struct file *filp, unsigned int request, unsigned long arg)
-{
-	ssize_t retval = 0;
-	struct shofer_dev *shofer = filp->private_data;
-	struct buffer *in_buff = shofer->in_buff;
-	struct buffer *out_buff = shofer->out_buff;
-	struct kfifo *fifo_in = &in_buff->fifo;
-	struct kfifo *fifo_out = &out_buff->fifo;
-	char c;
-	int got;
-	struct shofer_ioctl cmd;
+static long control_ioctl (struct file *filp, unsigned int request, unsigned long arg) {
+    ssize_t retval = 0;
+    struct shofer_dev *shofer = filp->private_data;
+    struct buffer *in_buff = shofer->in_buff;
+    struct buffer *out_buff = shofer->out_buff;
+    struct kfifo *fifo_in = &in_buff->fifo;
+    struct kfifo *fifo_out = &out_buff->fifo;
+    char temp_buf[BUFFER_SIZE];
+    unsigned int to_copy;
+    struct shofer_ioctl cmd;
 
-	if (_IOC_TYPE(request) != SHOFER_IOCTL_TYPE || _IOC_NR(request) != SHOFER_IOCTL_NR) {
-		klog(KERN_WARNING, "IOC type and/or nr don't match");
-		return -EINVAL;
-	}
+    if (_IOC_TYPE(request) != SHOFER_IOCTL_TYPE || _IOC_NR(request) != SHOFER_IOCTL_NR) {
+        klog(KERN_WARNING, "IOC type and/or nr don't match");
+        return -EINVAL;
+    }
 
-	if (_IOC_SIZE(request) != sizeof(struct shofer_ioctl)) {
-		klog(KERN_WARNING, "Argument size doesn't match expected size");
-		return -EINVAL;
-	}
+    if (_IOC_SIZE(request) != sizeof(struct shofer_ioctl)) {
+        klog(KERN_WARNING, "Argument size doesn't match expected size");
+        return -EINVAL;
+    }
 
-	retval = copy_from_user(&cmd, (const void __user *) arg, sizeof(struct shofer_ioctl));
-	if (retval) {
-		klog(KERN_WARNING, "copy_from_user failed");
-		return retval;
-	}
+    retval = copy_from_user(&cmd, (const void __user *) arg, sizeof(struct shofer_ioctl));
+    if (retval) {
+        klog(KERN_WARNING, "copy_from_user failed");
+        return retval;
+    }
 
-	if (cmd.count == 0) {
-		klog(KERN_WARNING, "copy count is zero");
-		return retval;
-	}
+    if (cmd.count == 0) {
+        klog(KERN_WARNING, "copy count is zero");
+        return retval;
+    }
 
-	/* copy cmd.count bytes from in_buff to out_buff */
-	/* todo (similar to timer) */
-    spin_lock(&out_buff->key);
     spin_lock(&in_buff->key);
+    spin_lock(&out_buff->key);
 
     dump_buffer("ioctl-start:in_buff", in_buff);
     dump_buffer("ioctl-start:out_buff", out_buff);
 
+    /* Transfer only while both conditions are satisfied */
     while (cmd.count > 0 && kfifo_len(fifo_in) > 0 && kfifo_avail(fifo_out) > 0) {
-        unsigned int to_copy = min_t(unsigned int, cmd.count, BUFFER_SIZE);
+        to_copy = min_t(unsigned int, cmd.count, BUFFER_SIZE);
         to_copy = min(to_copy, kfifo_len(fifo_in));
 
-        retval = kfifo_out(fifo_in, in_buff, to_copy);
+        /* Temporarily fetch data from input buffer */
+        retval = kfifo_out(fifo_in, temp_buf, to_copy);
         if (retval <= 0)
             break;
 
-        retval = kfifo_in(fifo_out, out_buff, retval);
+        /* Push data into output buffer */
+        retval = kfifo_in(fifo_out, temp_buf, retval);
         if (retval <= 0)
             break;
 
@@ -385,50 +385,48 @@ static long control_ioctl (struct file *filp, unsigned int request, unsigned lon
     spin_unlock(&in_buff->key);
     spin_unlock(&out_buff->key);
 
-	return retval;
+    return retval;
 }
+
 
 static void timer_function(struct timer_list *t)
 {
-	struct shofer_timer *timer = container_of(t, struct shofer_timer, timer);
-	struct buffer *in_buff = timer->in_buff, *out_buff = timer->out_buff;
-	struct kfifo *fifo_in = &in_buff->fifo;
-	struct kfifo *fifo_out = &out_buff->fifo;
-	char c;
-	int got;
+    struct shofer_timer *timer = container_of(t, struct shofer_timer, timer);
+    struct buffer *in_buff = timer->in_buff, *out_buff = timer->out_buff;
+    struct kfifo *fifo_in = &in_buff->fifo;
+    struct kfifo *fifo_out = &out_buff->fifo;
+    char c;
+    int got;
 
-	/* get locks on both buffers */
-	spin_lock(&out_buff->key);
-	spin_lock(&in_buff->key);
+    /* get locks on both buffers */
+    spin_lock(&out_buff->key);
+    spin_lock(&in_buff->key);
 
-	dump_buffer("timer-start:in_buff", in_buff);
-	dump_buffer("timer-start:out_buff", out_buff);
+    dump_buffer("timer-start:in_buff", in_buff);
+    dump_buffer("timer-start:out_buff", out_buff);
 
-	if (kfifo_len(fifo_in) > 0 && kfifo_avail(fifo_out) > 0) {
-		got = kfifo_get(fifo_in, &c);
-		if (got > 0) {
-			got = kfifo_put(fifo_out, c);
-			if (got)
-				LOG("timer moved '%c' from in to out", c);
-			else /* should't happen! */
-				klog(KERN_WARNING, "kfifo_put failed");
-		}
-		else { /* should't happen! */
-			klog(KERN_WARNING, "kfifo_get failed");
-		}
-	}
-	else {
-		LOG("timer: nothing in input buffer");
-		//for test: put '#' in output buffer
-		got = kfifo_put(fifo_out, '#');
-	}
+    /* Transfer only if there is data in input and space in output */
+    if (kfifo_len(fifo_in) > 0 && kfifo_avail(fifo_out) > 0) {
+        got = kfifo_get(fifo_in, &c);
+        if (got > 0) {
+            got = kfifo_put(fifo_out, c);
+            if (got)
+                    LOG("timer moved '%c' from in to out", c);
+            else
+            klog(KERN_WARNING, "kfifo_put failed");
+        } else {
+            klog(KERN_WARNING, "kfifo_get failed");
+        }
+    } else {
+        LOG("timer: No data to transfer or insufficient space in output buffer");
+    }
 
-	dump_buffer("timer-end:in_buff", in_buff);
-	dump_buffer("timer-end:out_buff", out_buff);
+    dump_buffer("timer-end:in_buff", in_buff);
+    dump_buffer("timer-end:out_buff", out_buff);
 
-	spin_unlock(&in_buff->key);
-	spin_unlock(&out_buff->key);
+    spin_unlock(&in_buff->key);
+    spin_unlock(&out_buff->key);
 
-	/* reschedule timer for period */
-	mod_timer(t, jiffies + msecs_to_jiffies(TIMER_PERIOD));
+    /* Reschedule timer for period */
+    mod_timer(t, jiffies + msecs_to_jiffies(TIMER_PERIOD));
 }
