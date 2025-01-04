@@ -9,7 +9,6 @@
 #include <ctime>
 
 int main() {
-    // List of devices to open
     std::vector<std::string> devices = {
         "/dev/shofer0",
         "/dev/shofer1",
@@ -19,9 +18,8 @@ int main() {
         "/dev/shofer5"
     };
 
-    std::vector<int> fds; // File descriptors
+    std::vector<int> fds;
 
-    // Open all devices for writing
     for (const auto& device : devices) {
         int fd = open(device.c_str(), O_WRONLY | O_NONBLOCK);
         if (fd < 0) {
@@ -37,21 +35,18 @@ int main() {
         return 1;
     }
 
-    // Prepare poll structures
     std::vector<pollfd> poll_fds;
     for (const auto& fd : fds) {
         pollfd pfd;
         pfd.fd = fd;
-        pfd.events = POLLOUT; // Waiting for ready-to-write
+        pfd.events = POLLOUT;
         poll_fds.push_back(pfd);
     }
 
-    std::cout << "Starting periodic checks for writable devices..." << std::endl;
-
-    std::srand(static_cast<unsigned>(std::time(nullptr))); // Seed random number generator
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
 
     while (true) {
-        int ret = poll(poll_fds.data(), poll_fds.size(), 5000); // Wait for 5 seconds
+        int ret = poll(poll_fds.data(), poll_fds.size(), 5000);
         if (ret < 0) {
             std::cerr << "poll() error: " << strerror(errno) << std::endl;
             break;
@@ -62,7 +57,6 @@ int main() {
             continue;
         }
 
-        // Find writable devices
         std::vector<int> writable_indices;
         for (size_t i = 0; i < poll_fds.size(); ++i) {
             if (poll_fds[i].revents & POLLOUT) {
@@ -71,7 +65,6 @@ int main() {
         }
 
         if (!writable_indices.empty()) {
-            // Choose a random writable device
             int random_index = writable_indices[std::rand() % writable_indices.size()];
             int fd = poll_fds[random_index].fd;
 
@@ -85,7 +78,6 @@ int main() {
         }
     }
 
-    // Close all devices
     for (const auto& fd : fds) {
         close(fd);
     }
