@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(PollInputExample)
 
-set(CMAKE_CXX_STANDARD 17) # Use C++17 or another standard as needed
+# Set the C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_executable(PollInputExample poll_indef.cpp)
+# Define the first executable: poll_indef
+add_executable(poll_indef poll_indef.cpp)
+
+# Define the second executable: poll_every_five_seconds
+add_executable(poll_every_five_seconds poll_every_five_seconds.cpp)
